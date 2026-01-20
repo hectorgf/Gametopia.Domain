@@ -1,0 +1,11 @@
+﻿.vs
+Gametopia.Domain.Api/bin
+Gametopia.Domain.Api/obj
+Gametopia.Domain.Application/bin
+Gametopia.Domain.Application/obj
+Gametopia.Domain.Domain/bin
+Gametopia.Domain.Domain/obj
+Gametopia.Domain.Infrastructure/bin
+Gametopia.Domain.Infrastructure/obj
+Gametopia.Domain.Tests/bin
+Gametopia.Domain.Tests/obj
