@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Visual Studio
+.vs
+.vscode
+*.sln
+*.suo
+*.user
+*.sln.iml
+
+# Build results
+bin/
+obj/
+Debug/
+Release/
+
+# Nuget
+packages
+*.nuspec
+.nuget/
+
+# Tests
+TestResults/
+*.trx
+
+# Deployment
+k8s/
+.github/
+scripts/
+
+# CI/CD
+.github/
+
+# Documentation
+*.md
+CI-CD_DOCUMENTATION.md
+
+# Node modules (if any)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Others
+.env
+.env.local
+*.log

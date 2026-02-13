@@ -1,0 +1,57 @@
+kind: Ingress
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: gametopia-domain-ingress
+  namespace: gametopia-dev
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+spec:
+  tls:
+  - hosts:
+    - gametopia-dev.local
+    secretName: gametopia-dev-tls
+  rules:
+  - host: gametopia-dev.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gametopia-domain-api
+            port:
+              number: 8080
+
+---
+kind: Ingress
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: gametopia-domain-ingress
+  namespace: gametopia-prod
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - gametopia-prod.local
+    secretName: gametopia-prod-tls
+  rules:
+  - host: gametopia-prod.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gametopia-domain-api
+            port:
+              number: 8080
