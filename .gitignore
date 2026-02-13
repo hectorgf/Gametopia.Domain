@@ -1,11 +1,49 @@
-﻿.vs
-Gametopia.Domain.Api/bin
-Gametopia.Domain.Api/obj
-Gametopia.Domain.Application/bin
-Gametopia.Domain.Application/obj
-Gametopia.Domain.Domain/bin
-Gametopia.Domain.Domain/obj
-Gametopia.Domain.Infrastructure/bin
-Gametopia.Domain.Infrastructure/obj
-Gametopia.Domain.Tests/bin
-Gametopia.Domain.Tests/obj
+﻿# Visual Studio
+.vs
+.vscode
+*.suo
+*.user
+*.sln.iml
+
+# Build results
+bin/
+obj/
+Debug/
+Release/
+publish/
+
+# Test Results
+TestResults/
+*.trx
+
+# NuGet
+packages/
+*.nupkg
+*.nuspec
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+appsettings.Local.json
+
+# IDE
+.idea/
+*.swp
+*.swapmm
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI/CD (generated files)
+kubeconfig-*
+
+# Node (if any)
+node_modules/
+package-lock.json
+yarn.lock
