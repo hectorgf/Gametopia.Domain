@@ -21,13 +21,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Restore Solution
-        run: dotnet restore Gametopia.Domain.sln
+        run: dotnet restore Gametopia.Domain.slnx
 
       - name: Build Solution
-        run: dotnet build Gametopia.Domain.sln --configuration Release --no-restore
+        run: dotnet build Gametopia.Domain.slnx --configuration Release --no-restore
 
       - name: Run Tests
-        run: dotnet test Gametopia.Domain.sln --configuration Release --no-build --verbosity normal
+        run: dotnet test Gametopia.Domain.slnx --configuration Release --no-build --verbosity normal
 
 
   # ============================================================
