@@ -8,17 +8,17 @@ on:
     types:
       - opened
       - synchronize
-      - closed
+      - closed  # deploy solo cuando PR se mergea
 
 jobs:
 
   # ============================================================
-  # BUILD & TEST (SIEMPRE EN PR)
+  # BUILD & TEST (siempre en PR)
   # ============================================================
   build-test:
     name: Build & Test
     runs-on: [self-hosted, linux]
-
+    
     steps:
       - uses: actions/checkout@v4
 
@@ -36,7 +36,7 @@ jobs:
         run: dotnet test --configuration Release --no-build
 
   # ============================================================
-  # DEPLOY (SOLO SI LA PR SE MERGEA)
+  # DEPLOY (solo si PR mergeada)
   # ============================================================
   deploy:
     name: Deploy
@@ -81,19 +81,16 @@ jobs:
           echo "replicas=$REPLICAS" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      # ================= BUILD DOCKER =================
       - name: Build Docker image
         run: |
           TAG="${{ steps.env.outputs.tag }}"
           docker build -t gametopia-domain:$TAG .
           docker tag gametopia-domain:$TAG gametopia-domain:latest
 
-      # ================= NAMESPACE =================
       - name: Ensure namespace
         run: |
           kubectl create namespace ${{ steps.env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
-      # ================= DB SECRET =================
       - name: Apply DB Secret
         run: |
           kubectl create secret generic gametopia-db-secret \
@@ -101,8 +98,7 @@ jobs:
             --namespace=${{ steps.env.outputs.namespace }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      # ================= DEPLOY =================
-      - name: Deploy
+      - name: Deploy to Kubernetes
         run: |
           TAG="${{ steps.env.outputs.tag }}"
           NAMESPACE="${{ steps.env.outputs.namespace }}"
