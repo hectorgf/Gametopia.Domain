@@ -42,7 +42,7 @@ jobs:
     name: Deploy
     needs: build-test
     runs-on: [self-hosted, linux]
-    if: github.event.pull_request.merged == true
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
 
     steps:
       - uses: actions/checkout@v4
