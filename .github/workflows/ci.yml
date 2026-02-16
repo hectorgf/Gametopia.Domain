@@ -92,8 +92,8 @@ jobs:
       - name: Setup kubeconfig
         run: |
           mkdir -p /tmp/kube
-          sudo cp /etc/rancher/k3s/k3s.yaml /tmp/kube/config
-          sudo chown $(whoami) /tmp/kube/config
+          sudo -n cp /etc/rancher/k3s/k3s.yaml /tmp/kube/config || cp /etc/rancher/k3s/k3s.yaml /tmp/kube/config
+          sudo -n chown $(whoami) /tmp/kube/config || chown $(whoami) /tmp/kube/config
           chmod 600 /tmp/kube/config
           kubectl get nodes
 
