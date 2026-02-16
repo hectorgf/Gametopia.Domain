@@ -16,8 +16,8 @@ jobs:
   # BUILD & TEST (siempre en PR)
   # ============================================================
   build-test:
-    name: Build & Test
-    runs-on: [self-hosted, linux, X64]
+    name: Build, Test & Publish
+    runs-on: [self-hosted, Linux, X64]
     
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
   deploy:
     name: Deploy
     needs: build-test
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, Linux, X64]
     if: github.event_name == 'push'
 
     steps:
