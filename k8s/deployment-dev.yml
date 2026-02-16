@@ -1,0 +1,167 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gametopia-dev
+  labels:
+    name: gametopia-dev
+    environment: development
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gametopia-api-config
+  namespace: gametopia-dev
+data:
+  ASPNETCORE_ENVIRONMENT: Development
+  Swagger__Enabled: "true"
+  ASPNETCORE_URLS: http://+:8080
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gametopia-domain-api
+  namespace: gametopia-dev
+  labels:
+    app: gametopia-domain-api
+    environment: development
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: gametopia-domain-api
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gametopia-domain-api
+  namespace: gametopia-dev
+  labels:
+    app: gametopia-domain-api
+    environment: development
+    version: APP_VERSION
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gametopia-domain-api
+  template:
+    metadata:
+      labels:
+        app: gametopia-domain-api
+        environment: development
+        version: APP_VERSION
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: gametopia-api
+        image: hectorgf/gametopia-domain:IMAGE_TAG
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        # Environment Variables from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: gametopia-api-config
+        
+        # Environment Variables from Secrets
+        env:
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            secretKeyRef:
+              name: gametopia-db-secret
+              key: ConnectionString
+        
+        # Resource Requests and Limits (homelab with 16GB RAM)
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        
+        # Liveness Probe
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Readiness Probe
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        # Security Context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gametopia-domain-api-hpa
+  namespace: gametopia-dev
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gametopia-domain-api
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gametopia-domain-api-pdb
+  namespace: gametopia-dev
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gametopia-domain-api
