@@ -2,7 +2,7 @@
 
 public class UnitTest1
 {
-    [Fact]
+    [Fact(Skip = "Placeholder test - to be implemented")]
     public void Test1()
     {
 
