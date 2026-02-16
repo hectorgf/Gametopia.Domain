@@ -9,270 +9,134 @@ on:
     branches:
       - develop
 
-env:
-  REGISTRY: docker.io
-  DOCKER_REGISTRY_IMAGE: ${{ secrets.DOCKER_USERNAME }}/gametopia-domain
-  KUBECONFIG_DEV_PATH: ${{ runner.temp }}/kubeconfig-dev
-  KUBECONFIG_PROD_PATH: ${{ runner.temp }}/kubeconfig-prod
-
 jobs:
-  # ============================================================================
-  # BUILD & TEST JOB
-  # ============================================================================
+
+  # ============================================================
+  # BUILD & TEST
+  # ============================================================
   build-test:
-    name: Build, Test & Publish
+    name: Build, Test & Version
     runs-on: [self-hosted, linux]
-    
+
     outputs:
       version: ${{ steps.version.outputs.version }}
-      docker-tag: ${{ steps.version.outputs.docker-tag }}
-    
+      docker_tag: ${{ steps.version.outputs.docker_tag }}
+      environment: ${{ steps.version.outputs.environment }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '8.0.x'
 
-      # ========================================================================
-      # VERSIONING
-      # ========================================================================
-      - name: Determine version and environment
+      # ================= VERSIONING =================
+      - name: Determine version
         id: version
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            ENV_TYPE="prod"
-            # Get current version from csproj or use default
-            CURRENT_VERSION=$(grep -oP '<Version>\K[^<]+' Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || echo "0.0.0")
-            # Increment patch version
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+            ENV="prod"
+            CURRENT=$(grep -oP '<Version>\K[^<]+' Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || echo "0.0.0")
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
             PATCH=$((PATCH + 1))
             VERSION="$MAJOR.$MINOR.$PATCH"
-            DOCKER_TAG="v$VERSION"
+            TAG="v$VERSION"
           else
-            ENV_TYPE="dev"
+            ENV="dev"
             VERSION="0.0.0"
-            DOCKER_TAG="latest"
+            TAG="dev"
           fi
-          
-          echo "environment=$ENV_TYPE" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "docker-tag=$DOCKER_TAG" >> $GITHUB_OUTPUT
-          
-          echo "Environment: $ENV_TYPE"
-          echo "Version: $VERSION"
-          echo "Docker Tag: $DOCKER_TAG"
 
-      # ========================================================================
-      # UPDATE VERSION IN CSPROJ (PROD ONLY)
-      # ========================================================================
-      - name: Update version in .csproj (Production only)
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "docker_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Update csproj version (prod only)
         if: github.ref == 'refs/heads/main'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Update or add Version element in csproj
-          if grep -q "<Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj; then
-            sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
-          else
-            sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
-          fi
-          echo "Updated version to: $VERSION"
-          cat Gametopia.Domain.Api/Gametopia.Domain.Api.csproj | grep -A 5 "PropertyGroup"
+          sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || \
+          sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
 
-      # ========================================================================
-      # RESTORE & BUILD
-      # ========================================================================
-      - name: Restore dependencies
+      # ================= BUILD =================
+      - name: Restore
         run: dotnet restore
 
-      - name: Build solution
+      - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      # ========================================================================
-      # TESTS
-      # ========================================================================
-      - name: Run unit tests
+      # ================= TEST =================
+      - name: Run Tests
+        run: dotnet test --configuration Release --no-build
+
+      # ================= DOCKER BUILD =================
+      - name: Build Docker image
         run: |
-          dotnet test \
-            Gametopia.Domain.Api.Tests/Gametopia.Domain.Api.Tests.csproj \
-            Gametopia.Domain.Application.Tests/Gametopia.Domain.Application.Tests.csproj \
-            Gametopia.Domain.Domain.Tests/Gametopia.Domain.Domain.Tests.csproj \
-            Gametopia.Domain.Infrastructure.Tests/Gametopia.Domain.Infrastructure.Tests.csproj \
-            --configuration Release \
-            --no-build \
-            --logger "console;verbosity=normal" \
-            --logger "trx;LogFileName=test-results.trx"
+          TAG="${{ steps.version.outputs.docker_tag }}"
+          docker build -t gametopia-domain:$TAG .
+          docker tag gametopia-domain:$TAG gametopia-domain:latest
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: '**/test-results.trx'
-
-      # ========================================================================
-      # PUBLISH
-      # ========================================================================
-      - name: Publish application
-        run: |
-          dotnet publish Gametopia.Domain.Api/Gametopia.Domain.Api.csproj \
-            --configuration Release \
-            --output ./publish \
-            --no-build
-
-      # ========================================================================
-      # DOCKER BUILD & PUSH
-      # ========================================================================
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.DOCKER_REGISTRY_IMAGE }}:${{ steps.version.outputs.docker-tag }}
-            ${{ env.DOCKER_REGISTRY_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ============================================================================
-  # DEPLOYMENT JOB
-  # ============================================================================
+  # ============================================================
+  # DEPLOY
+  # ============================================================
   deploy:
     name: Deploy to k3s
     needs: build-test
     runs-on: [self-hosted, linux]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
-    
+    if: github.event_name == 'push'
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Determine environment and kubeconfig
-        id: deploy-config
+      - name: Select environment
+        id: env
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            ENV_TYPE="prod"
+          if [[ "${{ needs.build-test.outputs.environment }}" == "prod" ]]; then
             NAMESPACE="gametopia-prod"
-            DEPLOYMENT_FILE="k8s/deployment-prod.yml"
-            KUBECONFIG_SECRET="KUBECONFIG_PROD"
+            CONNECTION="${{ secrets.SQLSERVER_PROD_CONNECTIONSTRING }}"
+            REPLICAS=2
           else
-            ENV_TYPE="dev"
             NAMESPACE="gametopia-dev"
-            DEPLOYMENT_FILE="k8s/deployment-dev.yml"
-            KUBECONFIG_SECRET="KUBECONFIG_DEV"
+            CONNECTION="${{ secrets.SQLSERVER_DEV_CONNECTIONSTRING }}"
+            REPLICAS=1
           fi
-          
-          echo "environment=$ENV_TYPE" >> $GITHUB_OUTPUT
+
           echo "namespace=$NAMESPACE" >> $GITHUB_OUTPUT
-          echo "deployment-file=$DEPLOYMENT_FILE" >> $GITHUB_OUTPUT
-          echo "kubeconfig-secret=$KUBECONFIG_SECRET" >> $GITHUB_OUTPUT
+          echo "connection=$CONNECTION" >> $GITHUB_OUTPUT
+          echo "replicas=$REPLICAS" >> $GITHUB_OUTPUT
 
-      - name: Setup kubeconfig
-        env:
-          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG_DEV }}
+      # Ensure namespace
+      - name: Ensure namespace
         run: |
-          mkdir -p ~/.kube
-          echo "$KUBECONFIG_CONTENT" | base64 -d > ~/.kube/config
-          chmod 600 ~/.kube/config
-          kubectl cluster-info
+          kubectl create namespace ${{ steps.env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
-      # ========================================================================
-      # CREATE NAMESPACE IF NOT EXISTS
-      # ========================================================================
-      - name: Create/Update Kubernetes namespace
+      # Create DB secret
+      - name: Apply DB Secret
         run: |
-          NAMESPACE="${{ steps.deploy-config.outputs.namespace }}"
-          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-          echo "Namespace '$NAMESPACE' ensured"
-
-      # ========================================================================
-      # CREATE SECRETS
-      # ========================================================================
-      - name: Create database connection string secret
-        env:
-          CONNECTION_STRING: ${{ secrets.SQLSERVER_DEV_CONNECTIONSTRING }}
-        run: |
-          NAMESPACE="${{ steps.deploy-config.outputs.namespace }}"
-          ENV_TYPE="${{ steps.deploy-config.outputs.environment }}"
-          
-          if [[ "$ENV_TYPE" == "prod" ]]; then
-            CONNECTION_STRING="${{ secrets.SQLSERVER_PROD_CONNECTIONSTRING }}"
-          fi
-          
           kubectl create secret generic gametopia-db-secret \
-            --from-literal=ConnectionString="$CONNECTION_STRING" \
-            --namespace="$NAMESPACE" \
+            --from-literal=ConnectionString="${{ steps.env.outputs.connection }}" \
+            --namespace=${{ steps.env.outputs.namespace }} \
             --dry-run=client -o yaml | kubectl apply -f -
-          
-          echo "Secret 'gametopia-db-secret' created/updated in namespace: $NAMESPACE"
 
-      # ========================================================================
-      # APPLY DEPLOYMENT
-      # ========================================================================
-      - name: Deploy to Kubernetes
+      # Deploy
+      - name: Deploy
         run: |
-          NAMESPACE="${{ steps.deploy-config.outputs.namespace }}"
-          DEPLOYMENT_FILE="${{ steps.deploy-config.outputs.deployment-file }}"
-          VERSION="${{ needs.build-test.outputs.version }}"
-          DOCKER_TAG="${{ needs.build-test.outputs.docker-tag }}"
-          
-          # Replace version and image tag in deployment file
-          sed -i "s|IMAGE_TAG|$DOCKER_TAG|g" "$DEPLOYMENT_FILE"
-          sed -i "s|APP_VERSION|$VERSION|g" "$DEPLOYMENT_FILE"
-          
-          # Apply deployment
-          kubectl apply -f "$DEPLOYMENT_FILE" --namespace="$NAMESPACE"
-          
-          echo "Deployment applied to namespace: $NAMESPACE"
+          TAG="${{ needs.build-test.outputs.docker_tag }}"
+          NAMESPACE="${{ steps.env.outputs.namespace }}"
+          REPLICAS="${{ steps.env.outputs.replicas }}"
 
-      # ========================================================================
-      # WAIT FOR ROLLOUT
-      # ========================================================================
-      - name: Wait for deployment rollout
+          kubectl set image deployment/gametopia-domain-api \
+            gametopia-domain-api=gametopia-domain:$TAG \
+            --namespace=$NAMESPACE || true
+
+          kubectl scale deployment gametopia-domain-api \
+            --replicas=$REPLICAS \
+            --namespace=$NAMESPACE || true
+
+          kubectl apply -f k8s/deployment.yml --namespace=$NAMESPACE
+
+      - name: Wait rollout
         run: |
-          NAMESPACE="${{ steps.deploy-config.outputs.namespace }}"
           kubectl rollout status deployment/gametopia-domain-api \
-            --namespace="$NAMESPACE" \
-            --timeout=5m
-
-      # ========================================================================
-      # VALIDATION
-      # ========================================================================
-      - name: Verify deployment
-        run: |
-          NAMESPACE="${{ steps.deploy-config.outputs.namespace }}"
-          ENV_TYPE="${{ steps.deploy-config.outputs.environment }}"
-          
-          echo "=== Deployment Status ==="
-          kubectl get deployment -n "$NAMESPACE"
-          
-          echo -e "\n=== Pod Status ==="
-          kubectl get pods -n "$NAMESPACE" -l app=gametopia-domain-api
-          
-          echo -e "\n=== Services ==="
-          kubectl get svc -n "$NAMESPACE"
-          
-          # Check pod logs
-          echo -e "\n=== Pod Logs ==="
-          POD=$(kubectl get pods -n "$NAMESPACE" -l app=gametopia-domain-api -o jsonpath='{.items[0].metadata.name}')
-          if [ ! -z "$POD" ]; then
-            kubectl logs "$POD" -n "$NAMESPACE" --tail=50
-          fi
-
-      - name: Deployment successful
-        run: |
-          echo "✅ Successfully deployed to ${{ steps.deploy-config.outputs.environment }} environment"
-          echo "   Namespace: ${{ steps.deploy-config.outputs.namespace }}"
-          echo "   Version: ${{ needs.build-test.outputs.version }}"
-          echo "   Docker Tag: ${{ needs.build-test.outputs.docker-tag }}"
+            --namespace=${{ steps.env.outputs.namespace }} \
+            --timeout=3m
