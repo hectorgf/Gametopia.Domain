@@ -15,19 +15,19 @@ jobs:
   build-test:
     name: Build, Test & Publish
     if: github.event.action != 'closed'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore
-        run: dotnet restore
+      - name: Restore Solution
+        run: dotnet restore Gametopia.Domain.sln
 
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
+      - name: Build Solution
+        run: dotnet build Gametopia.Domain.sln --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test --configuration Release --no-build
+      - name: Run Tests
+        run: dotnet test Gametopia.Domain.sln --configuration Release --no-build --verbosity normal
 
 
   # ============================================================
