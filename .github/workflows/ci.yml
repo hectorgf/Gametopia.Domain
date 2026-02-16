@@ -1,27 +1,23 @@
 name: CI/CD - Gametopia Domain
 
 on:
-  push:
-    branches:
-      - develop
-      - main
   pull_request:
     branches:
       - develop
+      - main
+    types:
+      - opened
+      - synchronize
+      - closed
 
 jobs:
 
   # ============================================================
-  # BUILD & TEST
+  # BUILD & TEST (SIEMPRE EN PR)
   # ============================================================
   build-test:
-    name: Build, Test & Version
+    name: Build & Test
     runs-on: [self-hosted, linux]
-
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      docker_tag: ${{ steps.version.outputs.docker_tag }}
-      environment: ${{ steps.version.outputs.environment }}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,87 +26,74 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # ================= VERSIONING =================
-      - name: Determine version
-        id: version
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            ENV="prod"
-            CURRENT=$(grep -oP '<Version>\K[^<]+' Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || echo "0.0.0")
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-            PATCH=$((PATCH + 1))
-            VERSION="$MAJOR.$MINOR.$PATCH"
-            TAG="v$VERSION"
-          else
-            ENV="dev"
-            VERSION="0.0.0"
-            TAG="dev"
-          fi
-
-          echo "environment=$ENV" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "docker_tag=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Update csproj version (prod only)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || \
-          sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
-
-      # ================= BUILD =================
       - name: Restore
         run: dotnet restore
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      # ================= TEST =================
-      - name: Run Tests
+      - name: Test
         run: dotnet test --configuration Release --no-build
 
-      # ================= DOCKER BUILD =================
-      - name: Build Docker image
-        run: |
-          TAG="${{ steps.version.outputs.docker_tag }}"
-          docker build -t gametopia-domain:$TAG .
-          docker tag gametopia-domain:$TAG gametopia-domain:latest
-
   # ============================================================
-  # DEPLOY
+  # DEPLOY (SOLO SI LA PR SE MERGEA)
   # ============================================================
   deploy:
-    name: Deploy to k3s
+    name: Deploy
     needs: build-test
     runs-on: [self-hosted, linux]
-    if: github.event_name == 'push'
+    if: github.event.pull_request.merged == true
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select environment
+      - name: Detect environment
         id: env
         run: |
-          if [[ "${{ needs.build-test.outputs.environment }}" == "prod" ]]; then
+          BASE="${{ github.event.pull_request.base.ref }}"
+
+          if [[ "$BASE" == "main" ]]; then
+            ENV="prod"
             NAMESPACE="gametopia-prod"
             CONNECTION="${{ secrets.SQLSERVER_PROD_CONNECTIONSTRING }}"
             REPLICAS=2
+
+            # Auto version bump
+            CURRENT=$(grep -oP '<Version>\K[^<]+' Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || echo "0.0.0")
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            PATCH=$((PATCH + 1))
+            VERSION="$MAJOR.$MINOR.$PATCH"
+            sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || \
+            sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
+
+            TAG="v$VERSION"
+
           else
+            ENV="dev"
             NAMESPACE="gametopia-dev"
             CONNECTION="${{ secrets.SQLSERVER_DEV_CONNECTIONSTRING }}"
             REPLICAS=1
+            TAG="dev-${{ github.run_number }}"
           fi
 
           echo "namespace=$NAMESPACE" >> $GITHUB_OUTPUT
           echo "connection=$CONNECTION" >> $GITHUB_OUTPUT
           echo "replicas=$REPLICAS" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      # Ensure namespace
+      # ================= BUILD DOCKER =================
+      - name: Build Docker image
+        run: |
+          TAG="${{ steps.env.outputs.tag }}"
+          docker build -t gametopia-domain:$TAG .
+          docker tag gametopia-domain:$TAG gametopia-domain:latest
+
+      # ================= NAMESPACE =================
       - name: Ensure namespace
         run: |
           kubectl create namespace ${{ steps.env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
-      # Create DB secret
+      # ================= DB SECRET =================
       - name: Apply DB Secret
         run: |
           kubectl create secret generic gametopia-db-secret \
@@ -118,10 +101,10 @@ jobs:
             --namespace=${{ steps.env.outputs.namespace }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      # Deploy
+      # ================= DEPLOY =================
       - name: Deploy
         run: |
-          TAG="${{ needs.build-test.outputs.docker_tag }}"
+          TAG="${{ steps.env.outputs.tag }}"
           NAMESPACE="${{ steps.env.outputs.namespace }}"
           REPLICAS="${{ steps.env.outputs.replicas }}"
 
