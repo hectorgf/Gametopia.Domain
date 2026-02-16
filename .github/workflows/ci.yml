@@ -21,7 +21,7 @@ jobs:
   # ============================================================================
   build-test:
     name: Build, Test & Publish
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, linux, X64]
     
     outputs:
       version: ${{ steps.version.outputs.version }}
