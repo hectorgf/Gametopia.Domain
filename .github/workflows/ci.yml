@@ -91,20 +91,9 @@ jobs:
 
       - name: Setup kubeconfig
         run: |
-          mkdir -p /tmp/kube
-          
-          # Intentar copiar k3s.yaml de forma segura
-          if [ -f /etc/rancher/k3s/k3s.yaml ]; then
-            cat /etc/rancher/k3s/k3s.yaml 2>/dev/null > /tmp/kube/config || \
-            sudo cat /etc/rancher/k3s/k3s.yaml > /tmp/kube/config
-          elif [ -f ~/.kube/config ]; then
-            cp ~/.kube/config /tmp/kube/config
-          else
-            echo "kubeconfig not found"
-            exit 1
-          fi
-          
-          chmod 600 /tmp/kube/config
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
           kubectl get nodes
 
 
