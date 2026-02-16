@@ -15,23 +15,19 @@ jobs:
   build-test:
     name: Build, Test & Publish
     if: github.event.action != 'closed'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+      - name: Restore Solution
+        run: dotnet restore Gametopia.Domain.slnx
 
-      - name: Restore
-        run: dotnet restore
+      - name: Build Solution
+        run: dotnet build Gametopia.Domain.slnx --configuration Release --no-restore
 
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test --configuration Release --no-build
+      - name: Run Tests
+        run: dotnet test Gametopia.Domain.slnx --configuration Release --no-build --verbosity normal
 
 
   # ============================================================

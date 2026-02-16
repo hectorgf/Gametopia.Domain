@@ -1,6 +1,5 @@
 <Solution>
   <Project Path="Gametopia.Domain.Api/Gametopia.Domain.Api.csproj" />
-  <Project Path="..\Gametopia.Contracts\Gametopia.Contracts.csproj" />
   <Project Path="Gametopia.Domain.Application/Gametopia.Domain.Application.csproj" />
   <Project Path="Gametopia.Domain.Domain/Gametopia.Domain.Domain.csproj" />
   <Project Path="Gametopia.Domain.Infrastructure/Gametopia.Domain.Infrastructure.csproj" />
