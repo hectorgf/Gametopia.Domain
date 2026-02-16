@@ -36,7 +36,7 @@ jobs:
   deploy:
     name: Deploy
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     env:
       KUBECONFIG: /tmp/kube/config
 
@@ -92,8 +92,18 @@ jobs:
       - name: Setup kubeconfig
         run: |
           mkdir -p /tmp/kube
-          sudo -n cp /etc/rancher/k3s/k3s.yaml /tmp/kube/config || cp /etc/rancher/k3s/k3s.yaml /tmp/kube/config
-          sudo -n chown $(whoami) /tmp/kube/config || chown $(whoami) /tmp/kube/config
+          
+          # Intentar copiar k3s.yaml de forma segura
+          if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+            cat /etc/rancher/k3s/k3s.yaml 2>/dev/null > /tmp/kube/config || \
+            sudo cat /etc/rancher/k3s/k3s.yaml > /tmp/kube/config
+          elif [ -f ~/.kube/config ]; then
+            cp ~/.kube/config /tmp/kube/config
+          else
+            echo "kubeconfig not found"
+            exit 1
+          fi
+          
           chmod 600 /tmp/kube/config
           kubectl get nodes
 
