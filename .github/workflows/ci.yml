@@ -1,14 +1,10 @@
 name: CI/CD - Gametopia Domain
 
 on:
-  pull_request:
+  push:
     branches:
       - develop
       - main
-    types:
-      - opened
-      - synchronize
-      - closed  # deploy solo cuando PR se mergea
 
 jobs:
 
