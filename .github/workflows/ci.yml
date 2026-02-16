@@ -5,20 +5,18 @@ on:
     branches:
       - develop
       - main
-  push:
-    branches:
-      - develop
-      - main
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
 
   # ============================================================
-  # BUILD & TEST (siempre en PR)
+  # BUILD & TEST (cuando se abre o actualiza PR)
   # ============================================================
   build-test:
     name: Build, Test & Publish
-    runs-on: [self-hosted, Linux, X64]
-    
+    if: github.event.action != 'closed'
+    runs-on: self-hosted
+
     steps:
       - uses: actions/checkout@v4
 
@@ -35,14 +33,14 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build
 
+
   # ============================================================
-  # DEPLOY (solo si PR mergeada)
+  # DEPLOY (solo cuando PR es mergeada)
   # ============================================================
   deploy:
     name: Deploy
-    needs: build-test
-    runs-on: [self-hosted, Linux, X64]
-    if: github.event_name == 'push'
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
@@ -63,8 +61,12 @@ jobs:
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
             PATCH=$((PATCH + 1))
             VERSION="$MAJOR.$MINOR.$PATCH"
-            sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || \
-            sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
+
+            if grep -q "<Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj; then
+              sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
+            else
+              sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
+            fi
 
             TAG="v$VERSION"
 
@@ -81,15 +83,19 @@ jobs:
           echo "replicas=$REPLICAS" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+
       - name: Build Docker image
         run: |
           TAG="${{ steps.env.outputs.tag }}"
           docker build -t gametopia-domain:$TAG .
           docker tag gametopia-domain:$TAG gametopia-domain:latest
 
+
       - name: Ensure namespace
         run: |
-          kubectl create namespace ${{ steps.env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace ${{ steps.env.outputs.namespace }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
 
       - name: Apply DB Secret
         run: |
@@ -97,6 +103,7 @@ jobs:
             --from-literal=ConnectionString="${{ steps.env.outputs.connection }}" \
             --namespace=${{ steps.env.outputs.namespace }} \
             --dry-run=client -o yaml | kubectl apply -f -
+
 
       - name: Deploy to Kubernetes
         run: |
@@ -113,6 +120,7 @@ jobs:
             --namespace=$NAMESPACE || true
 
           kubectl apply -f k8s/deployment.yml --namespace=$NAMESPACE
+
 
       - name: Wait rollout
         run: |
