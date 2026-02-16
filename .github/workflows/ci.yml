@@ -41,7 +41,7 @@ jobs:
   deploy:
     name: Deploy
     needs: build-test
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, linux, X64]
     if: github.event_name == 'push'
 
     steps:
