@@ -1,6 +1,10 @@
 name: CI/CD - Gametopia Domain
 
 on:
+  pull_request:
+    branches:
+      - develop
+      - main
   push:
     branches:
       - develop
@@ -38,7 +42,7 @@ jobs:
     name: Deploy
     needs: build-test
     runs-on: [self-hosted, linux]
-    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    if: github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
