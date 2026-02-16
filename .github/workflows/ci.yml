@@ -37,6 +37,8 @@ jobs:
     name: Deploy
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: self-hosted
+    env:
+      KUBECONFIG: /tmp/kube/config
 
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +87,15 @@ jobs:
           TAG="${{ steps.env.outputs.tag }}"
           docker build -t gametopia-domain:$TAG .
           docker tag gametopia-domain:$TAG gametopia-domain:latest
+
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p /tmp/kube
+          sudo cp /etc/rancher/k3s/k3s.yaml /tmp/kube/config
+          sudo chown $(whoami) /tmp/kube/config
+          chmod 600 /tmp/kube/config
+          kubectl get nodes
 
 
       - name: Ensure namespace
