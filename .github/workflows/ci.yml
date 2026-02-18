@@ -109,6 +109,16 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
 
+      - name: Debug secret
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG_DEV }}" ]; then
+            echo "SECRET IS EMPTY"
+            exit 1
+          else
+            echo "SECRET HAS VALUE"
+          fi
+
+          
       - name: Deploy to Kubernetes
         run: |
           TAG="${{ steps.env.outputs.tag }}"
