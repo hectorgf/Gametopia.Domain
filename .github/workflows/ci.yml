@@ -37,8 +37,6 @@ jobs:
     name: Deploy
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    env:
-      KUBECONFIG: /tmp/kube/config
 
     steps:
       - uses: actions/checkout@v4
