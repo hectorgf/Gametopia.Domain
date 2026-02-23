@@ -87,14 +87,6 @@ jobs:
           docker tag gametopia-domain:$TAG gametopia-domain:latest
 
 
-      - name: Setup kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > ~/.kube/config
-          chmod 600 ~/.kube/config
-          kubectl get nodes
-
-
       - name: Ensure namespace
         run: |
           kubectl create namespace ${{ steps.env.outputs.namespace }} \
