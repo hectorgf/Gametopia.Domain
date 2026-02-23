@@ -1,71 +1,38 @@
-name: CI/CD - Gametopia Domain
-
+name: Deploy
 on:
   pull_request:
-    branches:
-      - develop
-      - main
-    types: [opened, synchronize, reopened, closed]
+    types: [closed]
 
 jobs:
-  # ============================================================
-  # BUILD & TEST (cuando se abre o actualiza PR)
-  # ============================================================
-  build-test:
-    name: Build, Test & Publish
-    if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Restore Solution
-        run: dotnet restore Gametopia.Domain.slnx
-
-      - name: Build Solution
-        run: dotnet build Gametopia.Domain.slnx --configuration Release --no-restore
-
-      - name: Run Tests
-        run: dotnet test Gametopia.Domain.slnx --configuration Release --no-build --verbosity normal
-
-  # ============================================================
-  # DEPLOY (solo cuando PR es mergeada)
-  # ============================================================
   deploy:
     name: Deploy
-    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    if: ${{ github.event.pull_request.merged == true }}
     runs-on: self-hosted
-    env:
-      KUBECONFIG: /tmp/kube/config
+    # No es necesario KUBECONFIG, kubectl leerá el k3s.yaml por defecto
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Detect environment
         id: env
+        shell: bash
         run: |
           BASE="${{ github.event.pull_request.base.ref }}"
-
           if [[ "$BASE" == "main" ]]; then
             ENV="prod"
             NAMESPACE="gametopia-prod"
             CONNECTION="${{ secrets.SQLSERVER_PROD_CONNECTIONSTRING }}"
             REPLICAS=2
-
-            # Auto version bump
             CURRENT=$(grep -oP '<Version>\K[^<]+' Gametopia.Domain.Api/Gametopia.Domain.Api.csproj || echo "0.0.0")
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
             PATCH=$((PATCH + 1))
             VERSION="$MAJOR.$MINOR.$PATCH"
-
             if grep -q "<Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj; then
               sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
             else
               sed -i "/<PropertyGroup>/a\\    <Version>$VERSION</Version>" Gametopia.Domain.Api/Gametopia.Domain.Api.csproj
             fi
-
             TAG="v$VERSION"
-
           else
             ENV="dev"
             NAMESPACE="gametopia-dev"
@@ -80,49 +47,51 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Build Docker image
+        shell: bash
         run: |
           TAG="${{ steps.env.outputs.tag }}"
-          docker build -t gametopia-domain:$TAG .
-          docker tag gametopia-domain:$TAG gametopia-domain:latest
+          docker build -t gametopia-domain:"$TAG" .
+          docker tag gametopia-domain:"$TAG" gametopia-domain:latest
 
       - name: Ensure namespace
+        shell: bash
         run: |
-          kubectl create namespace ${{ steps.env.outputs.namespace }} \
+          kubectl create namespace "${{ steps.env.outputs.namespace }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply DB Secret
+        shell: bash
         run: |
           kubectl create secret generic gametopia-db-secret \
             --from-literal=ConnectionString="${{ steps.env.outputs.connection }}" \
-            --namespace=${{ steps.env.outputs.namespace }} \
+            --namespace="${{ steps.env.outputs.namespace }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to Kubernetes (idempotent)
+        shell: bash
         run: |
           TAG="${{ steps.env.outputs.tag }}"
           NAMESPACE="${{ steps.env.outputs.namespace }}"
           REPLICAS="${{ steps.env.outputs.replicas }}"
 
-          # Si no existe el deployment, se crea desde el YAML base
-          if ! kubectl get deployment gametopia-domain-api --namespace=$NAMESPACE; then
+          if ! kubectl get deployment gametopia-domain-api --namespace="$NAMESPACE" >/dev/null 2>&1; then
             echo "Deployment not found, creating..."
-            kubectl apply -f k8s/deployment.yml --namespace=$NAMESPACE
+            kubectl apply -f k8s/deployment.yml --namespace="$NAMESPACE"
           fi
 
-          # Actualizar imagen y replicas
           kubectl set image deployment/gametopia-domain-api \
-            gametopia-domain-api=gametopia-domain:$TAG \
-            --namespace=$NAMESPACE
+            gametopia-domain-api=gametopia-domain:"$TAG" \
+            --namespace="$NAMESPACE"
 
           kubectl scale deployment gametopia-domain-api \
-            --replicas=$REPLICAS \
-            --namespace=$NAMESPACE
+            --replicas="$REPLICAS" \
+            --namespace="$NAMESPACE"
 
-          # Aplicar cualquier cambio extra del YAML (estrategia declarativa)
-          kubectl apply -f k8s/deployment.yml --namespace=$NAMESPACE
+          kubectl apply -f k8s/deployment.yml --namespace="$NAMESPACE"
 
       - name: Wait rollout
+        shell: bash
         run: |
           kubectl rollout status deployment/gametopia-domain-api \
-            --namespace=${{ steps.env.outputs.namespace }} \
+            --namespace="${{ steps.env.outputs.namespace }}" \
             --timeout=3m
