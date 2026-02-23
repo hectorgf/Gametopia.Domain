@@ -8,7 +8,6 @@ on:
     types: [opened, synchronize, reopened, closed]
 
 jobs:
-
   # ============================================================
   # BUILD & TEST (cuando se abre o actualiza PR)
   # ============================================================
@@ -36,6 +35,8 @@ jobs:
     name: Deploy
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: self-hosted
+    env:
+      KUBECONFIG: /tmp/kube/config
 
     steps:
       - uses: actions/checkout@v4
@@ -84,10 +85,16 @@ jobs:
           docker build -t gametopia-domain:$TAG .
           docker tag gametopia-domain:$TAG gametopia-domain:latest
 
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl cluster-info
+
       - name: Ensure namespace
         run: |
-          kubectl create namespace ${{ steps.env.outputs.namespace }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace ${{ steps.env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply DB Secret
         run: |
@@ -96,20 +103,28 @@ jobs:
             --namespace=${{ steps.env.outputs.namespace }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Deploy to Kubernetes
+      - name: Deploy to Kubernetes (idempotent)
         run: |
           TAG="${{ steps.env.outputs.tag }}"
           NAMESPACE="${{ steps.env.outputs.namespace }}"
           REPLICAS="${{ steps.env.outputs.replicas }}"
 
+          # Si no existe el deployment, se crea desde el YAML base
+          if ! kubectl get deployment gametopia-domain-api --namespace=$NAMESPACE; then
+            echo "Deployment not found, creating..."
+            kubectl apply -f k8s/deployment.yml --namespace=$NAMESPACE
+          fi
+
+          # Actualizar imagen y replicas
           kubectl set image deployment/gametopia-domain-api \
             gametopia-domain-api=gametopia-domain:$TAG \
-            --namespace=$NAMESPACE || true
+            --namespace=$NAMESPACE
 
           kubectl scale deployment gametopia-domain-api \
             --replicas=$REPLICAS \
-            --namespace=$NAMESPACE || true
+            --namespace=$NAMESPACE
 
+          # Aplicar cualquier cambio extra del YAML (estrategia declarativa)
           kubectl apply -f k8s/deployment.yml --namespace=$NAMESPACE
 
       - name: Wait rollout
